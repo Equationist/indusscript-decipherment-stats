@@ -36,16 +36,19 @@ Headline metric:
   itself. The (a+ā)/all-phonemes figure is still reported alongside it.
 
 Usage:
-  python3 a_frequency.py        # downloads the Vedic corpora (first run), reads
-                                # readings_slp1.txt from this folder, and prints
-                                # one table: a+ā as % of vowels for Rigveda,
-                                # Atharvaveda, Yajurveda and three cuts of the IVC
-                                # readings (all / unique / unique & >=8 syllables)
-  Options: --ivc FILE  --data DIR  --refresh  --no-fetch
+  python3 a_frequency.py        # one self-contained script. Downloads the Vedic
+                                # corpora (~3 MB, urllib) and the DHARMA Sanskrit
+                                # epigraphy corpora (git clone), reads
+                                # readings_slp1.txt from this folder, and prints:
+                                #   - per-corpus Sanskrit epigraphy table
+                                #   - a+ā|vowels for Vedic literary vs Sanskrit
+                                #     epigraphy (all/short/seals) vs the IVC
+                                #     readings (all/unique/unique & >=8 syll)
+  Options: --ivc FILE  --data DIR  --dharma DIR  --refresh  --no-fetch  --no-epi
 
-On first run the needed Vedic texts (~3 MB) are downloaded from GitHub into a
-local cache dir (default: ./DharmicData beside this script; set with --data) and
-reused afterwards. No manual `git clone` required.
+Requirements: indic_transliteration (pip) and, for the epigraphy comparison, the
+system `git` tool. Use --no-epi to skip the epigraphy download entirely.
+Corpora are cached locally (./DharmicData, ./dharma_cache) and reused.
 
 ============================================================================
 DATA SOURCES & PROVENANCE
@@ -78,7 +81,8 @@ readings as a FILE argument to complete the comparison.
 """
 
 import sys, os, re, glob, json, argparse, unicodedata, statistics
-import io, zipfile, shutil, urllib.request, urllib.error
+import io, zipfile, shutil, urllib.request, urllib.error, subprocess
+import xml.etree.ElementTree as ET
 from collections import Counter
 from indic_transliteration import sanscript
 
@@ -328,6 +332,118 @@ def print_table(title, headers, rows, aligns=None):
     print(rule)
 
 
+# ---------------------------------------------------------------------------
+# Sanskrit EPIGRAPHY comparison (DHARMA project EpiDoc corpora).
+# Tests whether the IVC decipherment's extreme a+ā-vowel share is just a
+# *register* effect: the Vedic rows are running literary text, whereas IVC seals
+# are short, name/title-heavy inscriptions. We compare against real Sanskrit
+# epigraphy, including its short SEAL legends -- the closest analog to IVC seals.
+# (Coin legends would be ideal but no machine-readable coin-legend *text* corpus
+# is openly available; the numismatic datasets are coin *images* for ML.)
+# Needs the system `git` tool to clone the corpora.
+# ---------------------------------------------------------------------------
+DHARMA_CORPORA = [   # (label, erc-dharma repo, glob of edition XML inside the repo)
+    ("Daksina Kosala",     "tfb-daksinakosala-epigraphy", "workflow-output/editedxml/EDITED_*.xml"),
+    ("Maitraka (Valabhi)", "tfb-maitraka-epigraphy",      "workflow-output/editedxml/EDITED_*.xml"),
+    ("Badami Calukya",     "tfb-badamicalukya-epigraphy", "workflow-output/editedxml/EDITED_*.xml"),
+    ("Kalyana Calukya",    "tfb-kalyanacalukya-epigraphy","workflow-output/editedxml/EDITED_*.xml"),
+    ("Bhaumakara",         "tfb-bhaumakara-epigraphy",    "workflow-output/editedxml/EDITED_*.xml"),
+    ("Eastern Calukya",    "tfb-vengicalukya-epigraphy",  "workflow-output/editedxml/EDITED_*.xml"),
+    ("Somavamsin",         "tfb-somavamsin-epigraphy",    "workflow-output/editedxml/EDITED_*.xml"),
+    ("Bengal charters",    "tfb-bengalcharters-epigraphy","texts/DHARMA_INS*.xml"),
+    ("Bengal dedications", "tfb-bengalded-epigraphy",     "texts/xml/DHARMA_INS*.xml"),
+    ("Early Andhra (Skt)", "tfb-eiad-epigraphy",          "texts/xml/DHARMA_INS*.xml"),
+    ("Arakan",             "tfb-arakan-epigraphy",        "xml-provisional/DHARMA_INS*.xml"),
+    ("Pallava",            "tfa-pallava-epigraphy",       "DHARMA_INS*.xml"),
+    ("Khmer (SE Asia)",    "tfc-khmer-epigraphy",         "texts/xml/DHARMA_INS*.xml"),
+    ("Nusantara (SE Asia)","tfc-nusantara-epigraphy",     "xml/DHARMA_INS*.xml"),
+    ("Campa (SE Asia)",    "tfc-campa-epigraphy",         "xml/DHARMA_INSCIC*.xml"),
+]
+# Same project, but a Middle Indo-Aryan (Prakrit) corpus: the Early Andhra
+# Buddhist *donative* inscriptions (Amaravati, Nagarjunakonda...) -- short,
+# name-heavy gift records, the closest large clean analog to IVC seals.
+DHARMA_PRAKRIT = [("Early Andhra donatives", "tfb-eiad-epigraphy", "texts/xml/DHARMA_INS*.xml")]
+SHORT_MAX_VOWELS = 60        # "short inscription" = edition with <= this many vowels
+
+_XMLLANG = "{http://www.w3.org/XML/1998/namespace}lang"
+_EPI_SKIP = {"note","gap","orig","abbr","rdg","g","space","milestone","certainty",
+             "witDetail","head","surplus","del","teiHeader","desc","figure","lacunaEnd"}
+_EPI_BREAK = {"lb","pb","l","p","lg","div","ab","seg"}
+
+
+def _ln(tag):
+    return tag.split("}")[-1] if isinstance(tag, str) else tag
+
+
+def _lang_ok(lang, want):
+    return lang is None or lang.lower().startswith(want)
+
+
+def _epi_text(elem, want="san"):
+    """Recursively collect `want`-language text from an EpiDoc element (drops
+    apparatus, notes, heads, lost text; keeps regularized readings; skips
+    subtrees explicitly tagged as a different language)."""
+    if _ln(elem.tag) in _EPI_SKIP or not _lang_ok(elem.attrib.get(_XMLLANG), want):
+        return ""
+    parts = [elem.text or ""]
+    for ch in elem:
+        parts.append(_epi_text(ch, want)); parts.append(ch.tail or "")
+    t = "".join(parts)
+    return t + " " if _ln(elem.tag) in _EPI_BREAK else t
+
+
+def _head_label(div):
+    h = div.find("{*}head")
+    return "".join(h.itertext()).strip().lower() if h is not None else ""
+
+
+def epidoc_extract(path, want="san"):
+    """Return (full_edition_text, seal_legend_text) in language `want` (a BCP-47
+    prefix such as 'san' or 'pra') for one EpiDoc file. Inscriptions whose edition
+    is in another language are skipped; foreign-language segments inside a matching
+    edition are dropped."""
+    try:
+        root = ET.parse(path).getroot()
+    except ET.ParseError:
+        return "", ""
+    ed = next((d for d in root.iter()
+               if _ln(d.tag) == "div" and d.attrib.get("type") == "edition"), None)
+    if ed is None or not _lang_ok(ed.attrib.get(_XMLLANG), want):
+        return "", ""
+    seals = [_epi_text(d, want) for d in ed.iter()
+             if _ln(d.tag) == "div" and d.attrib.get("type") == "textpart"
+             and "seal" in _head_label(d)]
+    return _epi_text(ed, want), " ".join(seals)
+
+
+def norm(s):
+    return re.sub(r"\s+", " ", s).strip()
+
+
+def dharma_download(repo, cache):
+    """git clone --depth 1 a DHARMA repo into the cache; return its path or None."""
+    dest = os.path.join(cache, repo)
+    if os.path.isdir(dest):
+        return dest
+    os.makedirs(cache, exist_ok=True)
+    print(f"[fetch] cloning {repo} ...", file=sys.stderr)
+    r = subprocess.run(["git", "clone", "--depth", "1",
+                        f"https://github.com/erc-dharma/{repo}.git", dest],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return dest if r.returncode == 0 else None
+
+
+def aav(text, scheme):
+    """(a+ā count, vowel count) for one text string."""
+    m = count(to_slp1(text, scheme))
+    return (m["a"] + m["aa"], m["vowels"]) if m else (0, 0)
+
+
+def _aav_pct(pairs):
+    aa = sum(p[0] for p in pairs); nv = sum(p[1] for p in pairs)
+    return (100 * aa / nv if nv else float("nan")), nv
+
+
 def _default_ivc_path():
     """readings_slp1.txt beside this script, else in the current directory."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -338,46 +454,139 @@ def _default_ivc_path():
 
 
 def main():
-    ap = argparse.ArgumentParser()
+    here = os.path.dirname(os.path.abspath(__file__))
+    ap = argparse.ArgumentParser(
+        description="a+ā as % of vowels: Vedic literary vs Sanskrit epigraphy vs IVC decipherment")
     ap.add_argument("--ivc", metavar="FILE", default=_default_ivc_path(),
                     help="IVC readings, one per line (default: readings_slp1.txt beside this script)")
-    ap.add_argument("--data", default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "DharmicData"),
-                    help="local cache dir for the Vedic corpora (auto-downloaded here if absent)")
-    ap.add_argument("--refresh", action="store_true", help="re-download the corpora even if cached")
-    ap.add_argument("--no-fetch", action="store_true", help="use cache only; else baked-in baselines")
+    ap.add_argument("--data", default=os.path.join(here, "DharmicData"),
+                    help="cache dir for the Vedic corpora (auto-downloaded here if absent)")
+    ap.add_argument("--dharma", default=os.path.join(here, "dharma_cache"),
+                    help="cache dir for the DHARMA epigraphy repos (git-cloned here)")
+    ap.add_argument("--refresh", action="store_true", help="re-download the Vedic corpora")
+    ap.add_argument("--no-fetch", action="store_true", help="don't download Vedic; use baked-in baselines")
+    ap.add_argument("--no-epi", action="store_true", help="skip the Sanskrit-epigraphy download/comparison")
+    ap.add_argument("--extra", metavar="DIR", default=os.path.join(here, "extra_corpora"),
+                    help="folder of extra corpora to score: each *.txt = one corpus "
+                         "(one inscription per line, scheme auto-detected); *.xml = EpiDoc, "
+                         "all pooled as one corpus. Drop e.g. donative/coin-legend files here.")
     args = ap.parse_args()
+    IAST = sanscript.IAST
 
-    rows = []
-
-    # 1) Vedic baselines (downloads the corpora on first run)
+    # 1) Vedic LITERARY rows (live download; baked-in baselines if offline) --------
+    vedic = []
     D = ensure_corpora(args.data, refresh=args.refresh, allow_fetch=not args.no_fetch)
-    corpora = [
-        ("Rigveda",     os.path.join(D, "Rigveda")),
-        ("Atharvaveda", os.path.join(D, "AtharvaVeda")),
-        ("Yajurveda",   os.path.join(D, "Yajurveda", "vajasneyi_madhyadina_samhita.json")),
-    ] if D else []
-    if corpora:
-        for name, path in corpora:
+    vcorp = [("Rigveda", os.path.join(D, "Rigveda")),
+             ("Atharvaveda", os.path.join(D, "AtharvaVeda")),
+             ("Yajurveda", os.path.join(D, "Yajurveda", "vajasneyi_madhyadina_samhita.json"))] if D else []
+    if vcorp:
+        for name, path in vcorp:
             if os.path.exists(path):
-                rows.append([name, f"{corpus_a_aa_vow_pct(load_veda(path)):.2f}%"])
-    else:                                   # offline with no cache -> baked-in numbers
-        for name, (agg, _m, _sd) in BASELINES.items():
-            rows.append([name.split(" (")[0], f"{agg:.2f}%"])
-
-    # 2) Three cuts of the IVC decipherment readings
-    if os.path.isfile(args.ivc):
-        recs  = read_reading_records(args.ivc, scheme=sanscript.SLP1)
-        uniq  = unique_records(recs)
-        uniq8 = [r for r in uniq if r["vowels"] >= 8]      # syllables == vowel nuclei
-        if rows:
-            rows.append("SEP")
-        rows.append(["IVC \u2014 all",                  f"{agg_records(recs)['a_aa_vow_pct']:.2f}%"])
-        rows.append(["IVC \u2014 unique",               f"{agg_records(uniq)['a_aa_vow_pct']:.2f}%"])
-        rows.append(["IVC \u2014 unique, \u22658 syll", f"{agg_records(uniq8)['a_aa_vow_pct']:.2f}%"])
+                vedic.append((name, corpus_a_aa_vow_pct(load_veda(path))))
     else:
-        print(f"[note] {args.ivc} not found; printing Vedic rows only", file=sys.stderr)
+        for name, (agg, _m, _s) in BASELINES.items():
+            vedic.append((name.split(" (")[0], agg))
 
-    print_table("a+ā as % of vowels", ["", "a+ā|vowels"], rows, aligns=["<", ">"])
+    # 2) Sanskrit EPIGRAPHY (DHARMA), per-corpus + pooled cuts --------------------
+    per_corpus, full_pairs, short_pairs, seal_texts, prakrit_pairs = [], [], [], [], []
+    if not args.no_epi:
+        for label, repo, pat in DHARMA_CORPORA:
+            path = dharma_download(repo, args.dharma)
+            if not path:
+                print(f"[skip] {label}: clone failed (is git installed?)", file=sys.stderr); continue
+            cf, cs, ci = [], 0, 0
+            for f in sorted(glob.glob(os.path.join(path, pat))):
+                full, seal = epidoc_extract(f); full = norm(full); seal = norm(seal)
+                if not full:
+                    continue
+                ci += 1
+                p = aav(full, IAST); cf.append(p); full_pairs.append(p)
+                if p[1] <= SHORT_MAX_VOWELS:
+                    short_pairs.append(p)
+                if seal:
+                    cs += 1; seal_texts.append(seal)
+            if cf:
+                cp, nv = _aav_pct(cf)
+                per_corpus.append((label, ci, cs, nv, cp))
+        # 2b) Prakrit (Middle Indo-Aryan) donative register, same project --------
+        for _pl, prepo, ppat in DHARMA_PRAKRIT:
+            ppath = dharma_download(prepo, args.dharma)
+            if not ppath:
+                continue
+            for f in sorted(glob.glob(os.path.join(ppath, ppat))):
+                full, _s = epidoc_extract(f, want="pra"); full = norm(full)
+                if full:
+                    prakrit_pairs.append(aav(full, IAST))
+
+    # 4) Extra user-supplied corpora (donatives, coin legends, READ TEI exports...) -
+    #    each *.txt = one corpus (one inscription per line); *.xml pooled as EpiDoc.
+    extra = []
+    if os.path.isdir(args.extra):
+        for fp in sorted(glob.glob(os.path.join(args.extra, "*.txt"))):
+            lines = [ln.strip() for ln in open(fp, encoding="utf-8") if ln.strip()]
+            p, v = _aav_pct([aav(ln, None) for ln in lines])     # scheme auto-detected
+            if v:
+                extra.append((os.path.splitext(os.path.basename(fp))[0], len(lines), v, p))
+        xmls = sorted(glob.glob(os.path.join(args.extra, "*.xml")))
+        if xmls:
+            pairs, n = [], 0
+            for fp in xmls:
+                full, _seal = epidoc_extract(fp)
+                full = norm(full)
+                if full:
+                    n += 1; pairs.append(aav(full, IAST))
+            p, v = _aav_pct(pairs)
+            if v:
+                extra.append((f"{os.path.basename(args.extra)}/EpiDoc", n, v, p))
+
+    # 3) IVC decipherment cuts ----------------------------------------------------
+    ivc = []
+    if os.path.isfile(args.ivc):
+        recs = read_reading_records(args.ivc, scheme=sanscript.SLP1)
+        uniq = unique_records(recs); uniq8 = [r for r in uniq if r["vowels"] >= 8]
+        for lab, rs in [("IVC \u2014 all", recs), ("IVC \u2014 unique", uniq),
+                        ("IVC \u2014 unique, \u22658 syll", uniq8)]:
+            g = agg_records(rs); ivc.append((lab, g["a_aa_vow_pct"], g["vowels"]))
+    else:
+        print(f"[note] {args.ivc} not found; skipping IVC rows", file=sys.stderr)
+
+    # ---- Output -----------------------------------------------------------------
+    if per_corpus:
+        print_table("Per-corpus Sanskrit epigraphy (full editions) — a+ā|vowels",
+                    ["corpus", "inscr", "seals", "vowels", "a+ā|vow"],
+                    [[lab, str(ni), str(ns), f"{nv:,}", f"{cp:.2f}%"]
+                     for lab, ni, ns, nv, cp in per_corpus],
+                    aligns=["<", ">", ">", ">", ">"])
+
+    rows = [[name + " (literary)", "", f"{p:.2f}%"] for name, p in vedic]
+    if full_pairs:
+        rows.append("SEP")
+        ea, ev = _aav_pct(full_pairs)
+        rows.append([f"Sanskrit epigraphy — all ({len(full_pairs)} inscr)", f"{ev:,} vow", f"{ea:.2f}%"])
+        if short_pairs:
+            sa, sv = _aav_pct(short_pairs)
+            rows.append([f"Sanskrit epigraphy — short (\u2264{SHORT_MAX_VOWELS} vow, {len(short_pairs)})",
+                         f"{sv:,} vow", f"{sa:.2f}%"])
+        seal_unique = list(dict.fromkeys(seal_texts))
+        if seal_unique:
+            za, zv = _aav_pct([aav(s, IAST) for s in seal_unique])
+            rows.append([f"Sanskrit epigraphy — seal legends ({len(seal_unique)} uniq)",
+                         f"{zv:,} vow", f"{za:.2f}%"])
+    if prakrit_pairs:
+        pa, pv = _aav_pct(prakrit_pairs)
+        rows.append([f"Prakrit donatives — Early Andhra ({len(prakrit_pairs)} inscr)",
+                     f"{pv:,} vow", f"{pa:.2f}%"])
+    if extra:
+        rows.append("SEP")
+        for lab, n, v, p in extra:
+            rows.append([f"[extra] {lab} ({n} inscr)", f"{v:,} vow", f"{p:.2f}%"])
+    if ivc:
+        rows.append("SEP")
+        for lab, p, v in ivc:
+            rows.append([lab, f"{v:,} vow", f"{p:.2f}%"])
+
+    print_table("a+ā as % of vowels — literary vs epigraphic vs IVC",
+                ["corpus / cut", "sample", "a+ā|vow"], rows, aligns=["<", ">", ">"])
 
 
 if __name__ == "__main__":
