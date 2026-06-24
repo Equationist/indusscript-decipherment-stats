@@ -1,6 +1,6 @@
 # Running
 ```
-pip3 -r requirements.txt
+pip3 install -r requirements.txt
 python3 a_frequency.py
 ```
 # Results
