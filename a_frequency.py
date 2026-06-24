@@ -433,6 +433,39 @@ def dharma_download(repo, cache):
     return dest if r.returncode == 0 else None
 
 
+# ---------------------------------------------------------------------------
+# Rigveda BY PART OF SPEECH (UD_Sanskrit-Vedic, the Treebank of Vedic Sanskrit).
+# Tests the hypothesis that verbs (-ti etc.) depress the a+ā share and that a
+# names/epithets-only text (like a seal) would be far higher. We split the RV
+# tokens into nominal (NOUN/PROPN/ADJ = names + epithets) vs finite VERB and
+# score each with the same metric. Surface forms are in IAST.
+# ---------------------------------------------------------------------------
+def udvedic_download(cache):
+    """git clone --depth 1 the UD Vedic treebank; return its path or None."""
+    if os.path.isdir(cache):
+        return cache
+    print("[fetch] cloning UD_Sanskrit-Vedic ...", file=sys.stderr)
+    r = subprocess.run(["git", "clone", "--depth", "1",
+                        "https://github.com/UniversalDependencies/UD_Sanskrit-Vedic.git", cache],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return cache if r.returncode == 0 else None
+
+
+def rv_pos_forms(path, source="ṚV"):
+    """Return {UPOS: [surface form, ...]} for one Vedic text (by citation_text)."""
+    out = {}
+    for fn in glob.glob(os.path.join(path, "*.conllu")):
+        cit, keep = None, False
+        for ln in open(fn, encoding="utf-8"):
+            if ln.startswith("# citation_text="):
+                cit = ln.split("=", 1)[1].strip(); keep = (cit == source)
+            elif ln and ln[0] != "#":
+                c = ln.rstrip("\n").split("\t")
+                if keep and len(c) > 3 and "-" not in c[0] and "." not in c[0]:
+                    out.setdefault(c[3], []).append(c[1])
+    return out
+
+
 def aav(text, scheme):
     """(a+ā count, vowel count) for one text string."""
     m = count(to_slp1(text, scheme))
@@ -466,6 +499,9 @@ def main():
     ap.add_argument("--refresh", action="store_true", help="re-download the Vedic corpora")
     ap.add_argument("--no-fetch", action="store_true", help="don't download Vedic; use baked-in baselines")
     ap.add_argument("--no-epi", action="store_true", help="skip the Sanskrit-epigraphy download/comparison")
+    ap.add_argument("--udvedic", metavar="DIR", default=os.path.join(here, "UD_Sanskrit-Vedic"),
+                    help="cache dir for the UD Vedic treebank (git-cloned here) for the "
+                         "Rigveda by-part-of-speech breakdown")
     ap.add_argument("--extra", metavar="DIR", default=os.path.join(here, "extra_corpora"),
                     help="folder of extra corpora to score: each *.txt = one corpus "
                          "(one inscription per line, scheme auto-detected); *.xml = EpiDoc, "
@@ -486,6 +522,25 @@ def main():
     else:
         for name, (agg, _m, _s) in BASELINES.items():
             vedic.append((name.split(" (")[0], agg))
+
+    # 1b) Rigveda BY PART OF SPEECH (UD Vedic treebank) ---------------------------
+    #     Does dropping verbs and keeping only names/epithets raise the a+ā share?
+    rvpos, rv_nominal_pct = [], None
+    up = args.udvedic if os.path.isdir(args.udvedic) else (
+         None if args.no_fetch else udvedic_download(args.udvedic))
+    forms = rv_pos_forms(up) if up else {}
+    if forms:
+        grab = lambda keys: [f for k in keys for f in forms.get(k, [])]
+        cuts = [("RV — all tokens", list(forms)),
+                ("RV — nominal (NOUN+PROPN+ADJ)", ["NOUN", "PROPN", "ADJ"]),
+                ("RV — NOUN (incl. theonyms)", ["NOUN"]),
+                ("RV — ADJ (epithets)", ["ADJ"]),
+                ("RV — VERB (finite)", ["VERB"]),
+                ("RV — PRON", ["PRON"])]
+        for lab, keys in cuts:
+            p, v = _aav_pct([aav(w, IAST) for w in grab(keys)])
+            rvpos.append((lab, len(grab(keys)), v, p))
+        rv_nominal_pct = rvpos[1][3]
 
     # 2) Sanskrit EPIGRAPHY (DHARMA), per-corpus + pooled cuts --------------------
     per_corpus, full_pairs, short_pairs, seal_texts, prakrit_pairs = [], [], [], [], []
@@ -551,6 +606,12 @@ def main():
         print(f"[note] {args.ivc} not found; skipping IVC rows", file=sys.stderr)
 
     # ---- Output -----------------------------------------------------------------
+    if rvpos:
+        print_table("Rigveda by part of speech (UD Vedic Treebank) — a+ā|vowels",
+                    ["RV token class", "tokens", "vowels", "a+ā|vow"],
+                    [[lab, f"{nt:,}", f"{nv:,}", f"{p:.2f}%"] for lab, nt, nv, p in rvpos],
+                    aligns=["<", ">", ">", ">"])
+
     if per_corpus:
         print_table("Per-corpus Sanskrit epigraphy (full editions) — a+ā|vowels",
                     ["corpus", "inscr", "seals", "vowels", "a+ā|vow"],
@@ -559,6 +620,8 @@ def main():
                     aligns=["<", ">", ">", ">", ">"])
 
     rows = [[name + " (literary)", "", f"{p:.2f}%"] for name, p in vedic]
+    if rv_nominal_pct is not None:
+        rows.append(["Rigveda \u2014 names/epithets only (nominal)", "", f"{rv_nominal_pct:.2f}%"])
     if full_pairs:
         rows.append("SEP")
         ea, ev = _aav_pct(full_pairs)
