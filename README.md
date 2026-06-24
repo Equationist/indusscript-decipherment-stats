@@ -5,6 +5,18 @@ python3 a_frequency.py
 ```
 # Results
 ```
+Rigveda by part of speech (UD Vedic Treebank) — a+ā|vowels
+──────────────────────────────────────────────────────
+RV token class                 tokens  vowels  a+ā|vow
+──────────────────────────────────────────────────────
+RV — all tokens                34,045  77,623   64.25%
+RV — nominal (NOUN+PROPN+ADJ)  16,977  43,812   63.30%
+RV — NOUN (incl. theonyms)     12,703  31,729   63.31%
+RV — ADJ (epithets)             4,274  12,083   63.28%
+RV — VERB (finite)              6,472  18,507   63.49%
+RV — PRON                       3,650   5,016   74.46%
+──────────────────────────────────────────────────────
+
 Per-corpus Sanskrit epigraphy (full editions) — a+ā|vowels
 ───────────────────────────────────────────────────
 corpus               inscr  seals   vowels  a+ā|vow
@@ -33,6 +45,7 @@ corpus / cut                                       sample  a+ā|vow
 Rigveda (literary)                                          60.65%
 Atharvaveda (literary)                                      62.34%
 Yajurveda (literary)                                        62.04%
+Rigveda — names/epithets only (nominal)                     63.30%
 ──────────────────────────────────────────────────────────────────
 Sanskrit epigraphy — all (973 inscr)          746,107 vow   65.99%
 Sanskrit epigraphy — short (≤60 vow, 227)       3,650 vow   63.34%
