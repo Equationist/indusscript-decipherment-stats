@@ -39,21 +39,23 @@ Campa (SE Asia)         47      0   17,800   61.66%
 ───────────────────────────────────────────────────
 
 a+ā as % of vowels — literary vs epigraphic vs IVC
-──────────────────────────────────────────────────────────────────
-corpus / cut                                       sample  a+ā|vow
-──────────────────────────────────────────────────────────────────
-Rigveda (literary)                                          60.65%
-Atharvaveda (literary)                                      62.34%
-Yajurveda (literary)                                        62.04%
-Rigveda — names/epithets only (nominal)                     63.30%
-──────────────────────────────────────────────────────────────────
-Sanskrit epigraphy — all (973 inscr)          746,107 vow   65.99%
-Sanskrit epigraphy — short (≤60 vow, 227)       3,650 vow   63.34%
-Sanskrit epigraphy — seal legends (65 uniq)       898 vow   66.15%
-Prakrit donatives — Early Andhra (173 inscr)   17,735 vow   67.68%
-──────────────────────────────────────────────────────────────────
-IVC — all                                      11,962 vow   94.98%
-IVC — unique                                    7,093 vow   95.35%
-IVC — unique, ≥8 syll                             914 vow   97.92%
-──────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────────────────────────
+corpus / cut                                          sample  a+ā|vow
+─────────────────────────────────────────────────────────────────────
+Rigveda (literary)                                             60.65%
+Atharvaveda (literary)                                         62.34%
+Yajurveda (literary)                                           62.04%
+Rigveda — names/epithets only (nominal)                        63.30%
+─────────────────────────────────────────────────────────────────────
+Mitanni Indo-Aryan superstrate (names/numerals)      329 vow   60.18%
+─────────────────────────────────────────────────────────────────────
+Sanskrit epigraphy — all (973 inscr)             746,107 vow   65.99%
+Sanskrit epigraphy — short (≤60 vow, 227)          3,650 vow   63.34%
+Sanskrit epigraphy — seal legends (65 uniq)          898 vow   66.15%
+Prakrit donatives — Early Andhra (173 inscr)      17,735 vow   67.68%
+─────────────────────────────────────────────────────────────────────
+IVC — all                                         11,962 vow   94.98%
+IVC — unique                                       7,093 vow   95.35%
+IVC — unique, ≥8 syll                                914 vow   97.92%
+─────────────────────────────────────────────────────────────────────
 ```
