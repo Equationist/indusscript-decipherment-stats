@@ -1,0 +1,55 @@
+# Indo-Aryan Mitanni superstrate -- the oldest attested Indo-Aryan (~1500 BCE),
+# embedded in Hurrian/Mitanni cuneiform documents. Forms below are the ATTESTED
+# transcriptions (cuneiform syllabic spellings, dashes removed), not Vedic
+# normalisations, after Mayrhofer, "Die Indo-Arier im alten Vorderasien" (1966)
+# and "Die Arier im Vorderen Orient -- ein Mythos?" (1974). Reconstructed
+# Indo-Aryan equivalents are given in comments for transparency only; the metric
+# uses the attested forms. This register is almost entirely names / divine
+# names / numerals / epithets -- i.e. the "no-verb, seal-like" register.
+#
+# Lines starting with '#' and blank lines are ignored by the scorer.
+#
+# -- Theonyms (Mitanni-Hatti treaty god list: the Indo-Iranian gods) --
+Mitra          # Mitra-
+Uruwana        # Varuna- (also attested Aruna)
+Aruna          # Varuna-
+Indara         # Indra- (also attested Intar)
+Nasatiya       # Nasatya-
+Nasattiyanna   # Nasatya- (+ Hurrian -nna)
+#
+# -- Kikkuli horse-training treatise: Indo-Aryan numerals + vartanna 'turn/lap' --
+aika           # aika- 'one' (cf. Ved. eka-, archaic *oi-)
+tera           # tri- 'three'
+panza          # panca- 'five'
+satta          # sapta- 'seven'
+na             # nava- 'nine'
+wartanna       # vartana- 'turn, lap of a course'
+aikawartanna   # aika-vartanna 'one turn'
+terawartanna   # tera-vartanna 'three turns'
+panzawartanna  # panza-vartanna 'five turns'
+sattawartanna  # satta-vartanna 'seven turns'
+nawartanna     # na-vartanna 'nine turns'
+#
+# -- Kikkuli horse / colour technical terms --
+assussanni     # asva-sani- 'horse-trainer'
+babru          # babhru- 'brown'
+parita         # palita- 'grey'
+pinkara        # pingala- 'reddish-brown'
+#
+# -- Social term --
+maryannu       # marya- '(chariot-)warrior' (+ Hurrian -nnu)
+marya          # marya-
+#
+# -- Personal / royal names with secure Indo-Aryan etymologies (attested forms) --
+Tusratta       # *Tvais-ratha / Tvesa-ratha 'having a vehement chariot'
+Biridaswa      # *Prita-asva 'whose horses are dear'
+Subandu        # Su-bandhu 'having good kin'
+Indaruta       # *Indra-uta 'helped by Indra' (also Indarota)
+Artatama       # *Rta-dhaman 'whose abode is rta'
+Biria          # *Priya 'dear'
+Saussatar      # *Saukshatra? (royal name)
+Sattiwaza      # *Sati-vaja 'winning the prize' (also Kili-Tesub's IA name)
+Wasasatta      # *Vasa-ksatra?
+Artassumara    # *Rta-smara 'mindful of rta'
+Sutarna        # Su-tarana / Su-tarna 'crossing well'
+Parsasatar     # (royal name, IA element)

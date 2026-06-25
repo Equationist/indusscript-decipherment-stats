@@ -477,6 +477,30 @@ def _aav_pct(pairs):
     return (100 * aa / nv if nv else float("nan")), nv
 
 
+_LAT_VOWELS = set("aeiou")
+
+def latin_aav(path):
+    """(a-type count, vowel count) for a romanized (non-Indic) corpus such as the
+    Mitanni superstrate. Counts vowel GRAPHEMES: NFD-decompose, classify each base
+    letter, a-type = base 'a' (so a, ā/â, å, ã all count as a). Skips '#' comments,
+    blank lines, parentheticals and digits."""
+    a = v = 0
+    for ln in open(path, encoding="utf-8"):
+        s = ln.strip()
+        if not s or s.startswith("#"):
+            continue
+        s = re.sub(r"\([^)]*\)", " ", s)
+        for ch in unicodedata.normalize("NFD", s):
+            if unicodedata.combining(ch):
+                continue
+            b = ch.lower()
+            if b in _LAT_VOWELS:
+                v += 1
+                if b == "a":
+                    a += 1
+    return a, v
+
+
 def _default_ivc_path():
     """readings_slp1.txt beside this script, else in the current directory."""
     here = os.path.dirname(os.path.abspath(__file__))
@@ -502,6 +526,8 @@ def main():
     ap.add_argument("--udvedic", metavar="DIR", default=os.path.join(here, "UD_Sanskrit-Vedic"),
                     help="cache dir for the UD Vedic treebank (git-cloned here) for the "
                          "Rigveda by-part-of-speech breakdown")
+    ap.add_argument("--mitanni", metavar="FILE", default=os.path.join(here, "mitanni_superstrate.txt"),
+                    help="Indo-Aryan Mitanni superstrate (oldest attested Indo-Aryan) corpus file")
     ap.add_argument("--extra", metavar="DIR", default=os.path.join(here, "extra_corpora"),
                     help="folder of extra corpora to score: each *.txt = one corpus "
                          "(one inscription per line, scheme auto-detected); *.xml = EpiDoc, "
@@ -541,6 +567,15 @@ def main():
             p, v = _aav_pct([aav(w, IAST) for w in grab(keys)])
             rvpos.append((lab, len(grab(keys)), v, p))
         rv_nominal_pct = rvpos[1][3]
+
+    # 1c) Mitanni Indo-Aryan superstrate (romanized; a-type as % of vowel graphemes)
+    #     The oldest attested Indo-Aryan (~1500 BCE): an almost purely onomastic /
+    #     numeral / epithet register -- the closest "no-verb, seal-like" analog.
+    mitanni = []
+    if os.path.isfile(args.mitanni):
+        a, v = latin_aav(args.mitanni)
+        if v:
+            mitanni.append(("Mitanni Indo-Aryan superstrate (names/numerals)", v, 100 * a / v))
 
     # 2) Sanskrit EPIGRAPHY (DHARMA), per-corpus + pooled cuts --------------------
     per_corpus, full_pairs, short_pairs, seal_texts, prakrit_pairs = [], [], [], [], []
@@ -622,6 +657,10 @@ def main():
     rows = [[name + " (literary)", "", f"{p:.2f}%"] for name, p in vedic]
     if rv_nominal_pct is not None:
         rows.append(["Rigveda \u2014 names/epithets only (nominal)", "", f"{rv_nominal_pct:.2f}%"])
+    if mitanni:
+        rows.append("SEP")
+        for lab, v, p in mitanni:
+            rows.append([lab, f"{v:,} vow", f"{p:.2f}%"])
     if full_pairs:
         rows.append("SEP")
         ea, ev = _aav_pct(full_pairs)
